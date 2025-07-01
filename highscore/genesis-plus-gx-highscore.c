@@ -314,7 +314,18 @@ genesis_plus_gx_core_load_rom (HsCore      *core,
 static gboolean
 genesis_plus_gx_core_reset (HsCore *core, gboolean hard, GError **error)
 {
+  GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
+
   gen_reset (hard);
+
+  if (hard) {
+    system_init ();
+
+    if (!load_save (self, self->save_path, error))
+      return FALSE;
+
+    finish_init (self);
+  }
 
   return TRUE;
 }
