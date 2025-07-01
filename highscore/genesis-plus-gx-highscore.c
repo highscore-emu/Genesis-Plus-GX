@@ -250,7 +250,23 @@ load_save (GenesisPlusGXCore  *self,
     }
   }
 
+  // load backup ram for cd
+
   return TRUE;
+}
+
+static void
+finish_init (GenesisPlusGXCore *self)
+{
+  system_reset ();
+
+  for (int i = 0; i < HS_MEGA_DRIVE_MAX_PLAYERS; i++) {
+    config.input[i].padtype = DEVICE_PAD6B;
+    input.system[i] = SYSTEM_GAMEPAD;
+  }
+
+  io_init ();
+  input_reset ();
 }
 
 static gboolean
@@ -290,17 +306,7 @@ genesis_plus_gx_core_load_rom (HsCore      *core,
   if (!load_save (self, save_path, error))
     return FALSE;
 
-  system_reset ();
-
-  for (int i = 0; i < HS_MEGA_DRIVE_MAX_PLAYERS; i++) {
-    config.input[i].padtype = DEVICE_PAD6B;
-    input.system[i] = SYSTEM_GAMEPAD;
-  }
-
-  io_init ();
-  input_reset ();
-
-  // load backup ram for cd
+  finish_init (self);
 
   return TRUE;
 }
@@ -401,6 +407,8 @@ genesis_plus_gx_core_reload_save (HsCore      *core,
 
   if (!load_save (self, save_path, error))
     return FALSE;
+
+  finish_init (self);
 
   return TRUE;
 }
