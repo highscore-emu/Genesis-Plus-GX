@@ -58,11 +58,26 @@ struct _GenesisPlusGXCore
 
   guint32 pad_buttons[HS_MEGA_DRIVE_MAX_PLAYERS];
   char *save_path;
+
+  char *cd_bios_paths[3];
+  gboolean bios_missing;
+
+  guint32 bram_crc[2];
+};
+
+static uint8_t bram_format[0x40] =
+{
+  0x5f,0x5f,0x5f,0x5f,0x5f,0x5f,0x5f,0x5f,0x5f,0x5f,0x5f,0x00,0x00,0x00,0x00,0x40,
+  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+  0x53,0x45,0x47,0x41,0x5f,0x43,0x44,0x5f,0x52,0x4f,0x4d,0x00,0x01,0x00,0x00,0x00,
+  0x52,0x41,0x4d,0x5f,0x43,0x41,0x52,0x54,0x52,0x49,0x44,0x47,0x45,0x5f,0x5f,0x5f
 };
 
 #define SOUND_FREQUENCY 44100
 #define MAX_WIDTH 348
 #define MAX_HEIGHT 576
+
+#define CHUNK_SIZE 0x10000
 
 t_config config;
 
@@ -72,21 +87,19 @@ char SK_ROM[256];
 char SK_UPMEM[256];
 char MD_BIOS[256];
 char GG_BIOS[256];
+char CD_BIOS_EU[] = "cd-bios-eu";
+char CD_BIOS_US[] = "cd-bios-us";
+char CD_BIOS_JP[] = "cd-bios-jp";
 char MS_BIOS_EU[256];
 char MS_BIOS_JP[256];
 char MS_BIOS_US[256];
-char CD_BIOS_EU[256];
-char CD_BIOS_US[256];
-char CD_BIOS_JP[256];
-char CD_BRAM_JP[256];
-char CD_BRAM_US[256];
-char CD_BRAM_EU[256];
-char CART_BRAM[256];
 
 static void genesis_plus_gx_mega_drive_core_init (HsMegaDriveCoreInterface *iface);
+static void genesis_plus_gx_mega_cd_core_init (HsMegaCdCoreInterface *iface);
 
 G_DEFINE_FINAL_TYPE_WITH_CODE (GenesisPlusGXCore, genesis_plus_gx_core, HS_TYPE_CORE,
-                               G_IMPLEMENT_INTERFACE (HS_TYPE_MEGA_DRIVE_CORE, genesis_plus_gx_mega_drive_core_init))
+                               G_IMPLEMENT_INTERFACE (HS_TYPE_MEGA_DRIVE_CORE, genesis_plus_gx_mega_drive_core_init)
+                               G_IMPLEMENT_INTERFACE (HS_TYPE_MEGA_CD_CORE, genesis_plus_gx_mega_cd_core_init))
 
 void
 ROMCheatUpdate (void)
@@ -108,26 +121,54 @@ load_archive (char *filename, unsigned char *buffer, int max_size, char *extensi
   g_autoptr (GError) error = NULL;
   g_autofree char *data = NULL;
   gsize size;
+  const char *effective_path;
+  g_autoptr (GFile) file = NULL;
+  gboolean is_bios = FALSE;
+
+  core->bios_missing = FALSE;
+
+  if (!g_strcmp0 (filename, CD_BIOS_US)) {
+    effective_path = core->cd_bios_paths[HS_MEGA_CD_BIOS_US];
+    is_bios = TRUE;
+  } else if (!g_strcmp0 (filename, CD_BIOS_JP)) {
+    effective_path = core->cd_bios_paths[HS_MEGA_CD_BIOS_JP];
+    is_bios = TRUE;
+  } else if (!g_strcmp0 (filename, CD_BIOS_EU)) {
+    effective_path = core->cd_bios_paths[HS_MEGA_CD_BIOS_EU];
+    is_bios = TRUE;
+  } else {
+    effective_path = filename;
+  }
 
   if (extension) {
-    memcpy (extension, &filename[strlen (filename) - 3], 3);
+    memcpy (extension, &effective_path[strlen (effective_path) - 3], 3);
     extension[3] = 0;
   }
 
-  if (!g_file_get_contents (filename, &data, &size, &error)) {
-    hs_core_log (HS_CORE (core), HS_LOG_CRITICAL, "Failed to load file %s: %s", filename, error->message);
+  file = g_file_new_for_path (effective_path);
+
+  if (!g_file_query_exists (file, NULL)) {
+    if (is_bios)
+      core->bios_missing = TRUE;
+
+    return 0;
+  }
+
+  if (!g_file_load_contents (file, NULL, &data, &size, NULL, &error)) {
+    hs_core_log (HS_CORE (core), HS_LOG_CRITICAL, "Failed to load file %s: %s", effective_path, error->message);
     return 0;
   }
 
   /* size limit */
   if (size > MAXROMSIZE) {
-    hs_core_log (HS_CORE (core), HS_LOG_CRITICAL, "File %s is too large: %lu, maximum %d", filename, size, max_size);
+    hs_core_log (HS_CORE (core), HS_LOG_CRITICAL, "File %s is too large: %lu, maximum %d", effective_path, size, max_size);
     return 0;
   }
 
   size = MIN (size, max_size);
 
   memcpy (buffer, data, size);
+
   return size;
 }
 
@@ -204,20 +245,16 @@ set_defaults (void)
 }
 
 static gboolean
-load_save (GenesisPlusGXCore  *self,
-           const char         *save_path,
-           GError            **error)
+load_save_ram (GenesisPlusGXCore  *self, GError **error)
 {
   g_autoptr (GFile) file = NULL;
   g_autofree char *data = NULL;
   gsize size;
 
-  g_set_str (&self->save_path, save_path);
-
   if (!sram.on)
     return TRUE;
 
-  file = g_file_new_for_path (save_path);
+  file = g_file_new_for_path (self->save_path);
   if (!g_file_query_exists (file, NULL))
     return TRUE;
 
@@ -250,15 +287,184 @@ load_save (GenesisPlusGXCore  *self,
     }
   }
 
-  // load backup ram for cd
+  return TRUE;
+}
+
+static gboolean
+load_backup_ram (GenesisPlusGXCore  *self, GError **error)
+{
+  g_autoptr (GFile) save_dir = g_file_new_for_path (self->save_path);
+
+  if (!g_file_query_exists (save_dir, NULL) &&
+      !g_file_make_directory_with_parents (save_dir, NULL, error)) {
+    return FALSE;
+  }
+
+  g_autoptr (GFile) system_file = g_file_get_child (save_dir, "system.brm");
+
+  if (g_file_query_exists (system_file, NULL)) {
+    g_autoptr (GFileInputStream) stream = g_file_read (system_file, NULL, error);
+    if (!stream)
+      return FALSE;
+
+    if (!g_input_stream_read (G_INPUT_STREAM (stream), scd.bram, 0x2000, NULL, error))
+      return FALSE;
+
+    if (!g_input_stream_close (G_INPUT_STREAM (stream), NULL, error))
+      return FALSE;
+
+    self->bram_crc[0] = crc32 (0, scd.bram, 0x2000);
+  } else {
+    /* force internal backup RAM format (does not use previous region backup RAM) */
+    scd.bram[0x1fff] = 0;
+  }
+
+  /* check if internal backup RAM is correctly formatted */
+  if (memcmp (scd.bram + 0x2000 - 0x20, bram_format + 0x20, 0x20)) {
+    /* clear internal backup RAM */
+    memset (scd.bram, 0x00, 0x2000 - 0x40);
+
+    /* internal Backup RAM size fields */
+    bram_format[0x10] = bram_format[0x12] = bram_format[0x14] = bram_format[0x16] = 0x00;
+    bram_format[0x11] = bram_format[0x13] = bram_format[0x15] = bram_format[0x17] = (sizeof (scd.bram) / 64) - 3;
+
+    /* format internal backup RAM */
+    memcpy (scd.bram + 0x2000 - 0x40, bram_format, 0x40);
+
+    /* clear CRC to force file saving (in case previous region backup RAM was also formatted) */
+    self->bram_crc[0] = 0;
+  }
+
+  if (!scd.cartridge.id)
+    return TRUE;
+
+  g_autoptr (GFile) cart_file = g_file_get_child (save_dir, "cart.brm");
+
+  if (g_file_query_exists (cart_file, NULL)) {
+    g_autoptr (GFileInputStream) stream = g_file_read (cart_file, NULL, error);
+    if (!stream)
+      return FALSE;
+
+    int file_size = scd.cartridge.mask + 1;
+    int done = 0;
+
+    /* Read into buffer (2k blocks) */
+    while (file_size > CHUNK_SIZE) {
+      if (!g_input_stream_read (G_INPUT_STREAM (stream), scd.cartridge.area + done, CHUNK_SIZE, NULL, error))
+        return FALSE;
+
+      done += CHUNK_SIZE;
+      file_size -= CHUNK_SIZE;
+    }
+
+    /* Read remaining bytes */
+    if (file_size) {
+      if (!g_input_stream_read (G_INPUT_STREAM (stream), scd.cartridge.area + done, file_size, NULL, error))
+        return FALSE;
+    }
+
+    if (!g_input_stream_close (G_INPUT_STREAM (stream), NULL, error))
+      return FALSE;
+
+    /* update CRC */
+    self->bram_crc[1] = crc32 (0, scd.cartridge.area, scd.cartridge.mask + 1);
+  }
+
+  /* check if cartridge backup RAM is correctly formatted */
+  if (memcmp (scd.cartridge.area + scd.cartridge.mask + 1 - 0x20, bram_format + 0x20, 0x20)) {
+    /* clear cartridge backup RAM */
+    memset (scd.cartridge.area, 0x00, scd.cartridge.mask + 1);
+
+    /* Cartridge Backup RAM size fields */
+    bram_format[0x10] = bram_format[0x12] = bram_format[0x14] = bram_format[0x16] = (((scd.cartridge.mask + 1) / 64) - 3) >> 8;
+    bram_format[0x11] = bram_format[0x13] = bram_format[0x15] = bram_format[0x17] = (((scd.cartridge.mask + 1) / 64) - 3) & 0xff;
+
+    /* format cartridge backup RAM */
+    memcpy (scd.cartridge.area + scd.cartridge.mask + 1 - 0x40, bram_format, 0x40);
+  }
 
   return TRUE;
 }
 
-static void
-finish_init (GenesisPlusGXCore *self)
+static gboolean
+save_backup_ram (GenesisPlusGXCore  *self, GError **error)
 {
+  g_autoptr (GFile) save_dir = g_file_new_for_path (self->save_path);
+
+  if (!g_file_query_exists (save_dir, NULL) &&
+      !g_file_make_directory_with_parents (save_dir, NULL, error)) {
+    return FALSE;
+  }
+
+  /* verify that internal backup RAM has been modified */
+  if (crc32 (0, scd.bram, 0x2000) != self->bram_crc[0]) {
+    /* check if it is correctly formatted before saving */
+    if (!memcmp (scd.bram + 0x2000 - 0x20, bram_format + 0x20, 0x20)) {
+      g_autoptr (GFile) system_file = g_file_get_child (save_dir, "system.brm");
+
+      if (!g_file_replace_contents (system_file, (char *) scd.bram, 0x2000, NULL, FALSE,
+                                    G_FILE_CREATE_REPLACE_DESTINATION, NULL, NULL, error)) {
+        return FALSE;
+      }
+
+      /* update CRC */
+      self->bram_crc[0] = crc32 (0, scd.bram, 0x2000);
+    }
+  }
+
+  /* verify that cartridge backup RAM has been modified */
+  if (scd.cartridge.id && (crc32 (0, scd.cartridge.area, scd.cartridge.mask + 1) != self->bram_crc[1])) {
+    /* check if it is correctly formatted before saving */
+    if (!memcmp (scd.cartridge.area + scd.cartridge.mask + 1 - 0x20, bram_format + 0x20, 0x20)) {
+      g_autoptr (GFile) cart_file = g_file_get_child (save_dir, "cart.brm");
+      g_autoptr (GFileOutputStream) stream =
+        g_file_replace (cart_file, NULL, FALSE, G_FILE_CREATE_REPLACE_DESTINATION, NULL, error);
+
+      if (!stream)
+        return FALSE;
+
+      int file_size = scd.cartridge.mask + 1;
+      int done = 0;
+      // TODO
+
+      /* Write to file (2k blocks) */
+      while (file_size > CHUNK_SIZE) {
+        if (!g_output_stream_write (G_OUTPUT_STREAM (stream), scd.cartridge.area + done, CHUNK_SIZE, NULL, error))
+          return FALSE;
+
+        done += CHUNK_SIZE;
+        file_size -= CHUNK_SIZE;
+      }
+
+      /* Write remaining bytes */
+      if (file_size) {
+        if (!g_output_stream_write (G_OUTPUT_STREAM (stream), scd.cartridge.area + done, file_size, NULL, error))
+          return FALSE;
+      }
+
+      if (!g_output_stream_close (G_OUTPUT_STREAM (stream), NULL, error))
+        return FALSE;
+
+      /* update CRC */
+      self->bram_crc[1] = crc32 (0, scd.cartridge.area, scd.cartridge.mask + 1);
+    }
+  }
+
+  return TRUE;
+}
+
+static gboolean
+finish_init (GenesisPlusGXCore *self, GError **error)
+{
+  HsPlatform platform = hs_core_get_platform (HS_CORE (self));
+
+  if (platform != HS_PLATFORM_MEGA_CD && !load_save_ram (self, error))
+    return FALSE;
+
   system_reset ();
+
+  if (platform == HS_PLATFORM_MEGA_CD && !load_backup_ram (self, error))
+    return FALSE;
 
   for (int i = 0; i < HS_MEGA_DRIVE_MAX_PLAYERS; i++) {
     config.input[i].padtype = DEVICE_PAD6B;
@@ -267,6 +473,8 @@ finish_init (GenesisPlusGXCore *self)
 
   io_init ();
   input_reset ();
+
+  return TRUE;
 }
 
 static gboolean
@@ -277,6 +485,7 @@ genesis_plus_gx_core_load_rom (HsCore      *core,
                                GError     **error)
 {
   GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
+  HsPlatform platform = hs_core_get_platform (core);
 
   self->context = hs_core_create_software_context (HS_CORE (self), MAX_WIDTH, MAX_HEIGHT, HS_PIXEL_FORMAT_B8G8R8X8);
   self->frame_buffer = g_new0 (gint8, MAX_WIDTH * MAX_HEIGHT * 4);
@@ -291,22 +500,42 @@ genesis_plus_gx_core_load_rom (HsCore      *core,
 
   set_defaults ();
 
-  // TODO load bios
   // TODO clear disk interface
-  // TODO multiple CDs
 
+  self->bios_missing = TRUE;
   if (!load_rom ((char *) rom_paths[0])) {
+    if (self->bios_missing) {
+      const char *region_name;
+      switch (region_code) {
+        case REGION_USA:
+          region_name = "US";
+          break;
+        case REGION_EUROPE:
+          region_name = "EU";
+          break;
+        default:
+          region_name = "JP";
+          break;
+      }
+
+      g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_MISSING_BIOS, "Missing Sega CD %s BIOS", region_name);
+      return FALSE;
+    }
+
     g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Failed to load ROM");
     return FALSE;
   }
 
+  if (platform == HS_PLATFORM_MEGA_CD)
+    g_assert (cdd.loaded);
+
   audio_init (SOUND_FREQUENCY, 0);
   system_init ();
 
-  if (!load_save (self, save_path, error))
-    return FALSE;
+  g_set_str (&self->save_path, save_path);
 
-  finish_init (self);
+  if (!finish_init (self, error))
+    return FALSE;
 
   return TRUE;
 }
@@ -321,10 +550,8 @@ genesis_plus_gx_core_reset (HsCore *core, gboolean hard, GError **error)
   if (hard) {
     system_init ();
 
-    if (!load_save (self, self->save_path, error))
+    if (!finish_init (self, error))
       return FALSE;
-
-    finish_init (self);
   }
 
   return TRUE;
@@ -345,10 +572,10 @@ genesis_plus_gx_core_run_frame (HsCore *core)
   GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
   gboolean was_interlaced = interlaced;
 
-//  if (hs_core_get_platform (core) == HS_PLATFORM_SEGA_CD) TODO
-//  system_frame_scd (0);
-// else
-  system_frame_gen (0);
+  if (hs_core_get_platform (core) == HS_PLATFORM_MEGA_CD)
+    system_frame_scd (0);
+  else
+    system_frame_gen (0);
 
   int height_multiplier = (was_interlaced && interlaced) ? 2 : 1;
   hs_software_context_set_area (self->context,
@@ -398,6 +625,11 @@ static void
 genesis_plus_gx_core_stop (HsCore *core)
 {
   GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
+  HsPlatform platform = hs_core_get_platform (core);
+  g_autoptr (GError) error = NULL;
+
+  if (platform == HS_PLATFORM_MEGA_CD && !save_backup_ram (self, &error))
+    hs_core_log (core, HS_LOG_CRITICAL, "Failed to save backup RAM: %s", error->message);
 
   audio_shutdown ();
 
@@ -416,10 +648,10 @@ genesis_plus_gx_core_reload_save (HsCore      *core,
 
   system_init ();
 
-  if (!load_save (self, save_path, error))
-    return FALSE;
+  g_set_str (&self->save_path, save_path);
 
-  finish_init (self);
+  if (!finish_init (self, error))
+    return FALSE;
 
   return TRUE;
 }
@@ -440,19 +672,24 @@ genesis_plus_gx_core_sync_save (HsCore  *core,
                                 GError **error)
 {
   GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
+  HsPlatform platform = hs_core_get_platform (core);
 
-  if (!sram.on)
-    return TRUE;
+  if (platform == HS_PLATFORM_MEGA_CD) {
+    g_assert (!sram.on);
 
-  int size = get_sram_size ();
-  if (size == 0)
-    return TRUE;
+    if (!save_backup_ram (self, error))
+      return FALSE;
+  } else {
+    if (!sram.on)
+      return TRUE;
 
-  if (!g_file_set_contents (self->save_path, (char *) sram.sram, size, error))
-    return FALSE;
+    int size = get_sram_size ();
+    if (size == 0)
+      return TRUE;
 
-// if (system_hw == SYSTEM_MCD)
-//   bram_save();
+    if (!g_file_set_contents (self->save_path, (char *) sram.sram, size, error))
+      return FALSE;
+  }
 
   return TRUE;
 }
@@ -537,6 +774,11 @@ genesis_plus_gx_core_get_region (HsCore *core)
 static void
 genesis_plus_gx_core_finalize (GObject *object)
 {
+  GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (object);
+
+  for (int i = 0; i < 3; i++)
+    g_free (self->cd_bios_paths[i]);
+
   G_OBJECT_CLASS (genesis_plus_gx_core_parent_class)->finalize (object);
 
   core = NULL;
@@ -581,6 +823,36 @@ genesis_plus_gx_core_init (GenesisPlusGXCore *self)
 static void
 genesis_plus_gx_mega_drive_core_init (HsMegaDriveCoreInterface *iface)
 {
+}
+
+static void
+genesis_plus_gx_mega_cd_core_set_bios_path (HsMegaCdCore *core,
+                                            HsMegaCdBios  type,
+                                            const char   *path)
+{
+  GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
+
+  g_set_str (&self->cd_bios_paths[type], path);
+}
+
+static HsMegaCdBios
+genesis_plus_gx_mega_cd_core_get_used_bios (HsMegaCdCore *core)
+{
+  switch (region_code) {
+    case REGION_USA:
+      return HS_MEGA_CD_BIOS_US;
+    case REGION_EUROPE:
+      return HS_MEGA_CD_BIOS_EU;
+    default:
+      return HS_MEGA_CD_BIOS_JP;
+  }
+}
+
+static void
+genesis_plus_gx_mega_cd_core_init (HsMegaCdCoreInterface *iface)
+{
+  iface->set_bios_path = genesis_plus_gx_mega_cd_core_set_bios_path;
+  iface->get_used_bios = genesis_plus_gx_mega_cd_core_get_used_bios;
 }
 
 GType
