@@ -61,6 +61,8 @@ struct _GenesisPlusGXCore
 };
 
 #define SOUND_FREQUENCY 44100
+#define MAX_WIDTH 360
+#define MAX_HEIGHT 576
 
 t_config config;
 
@@ -260,13 +262,13 @@ genesis_plus_gx_core_load_rom (HsCore      *core,
 {
   GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
 
-  self->context = hs_core_create_software_context (HS_CORE (self), 360, 576, HS_PIXEL_FORMAT_B8G8R8X8);
-  self->frame_buffer = g_new0 (gint8, 360 * 576 * 4);
+  self->context = hs_core_create_software_context (HS_CORE (self), MAX_WIDTH, MAX_HEIGHT, HS_PIXEL_FORMAT_B8G8R8X8);
+  self->frame_buffer = g_new0 (gint8, MAX_WIDTH * MAX_HEIGHT * 4);
 
   memset(&bitmap, 0, sizeof (bitmap));
-  bitmap.width = 360;
-  bitmap.height = 576;
-  bitmap.pitch = 360 * 4;
+  bitmap.width = MAX_WIDTH;
+  bitmap.height = MAX_HEIGHT;
+  bitmap.pitch = MAX_WIDTH * 4;
   bitmap.data = (guchar *) self->frame_buffer;
 
   self->audio_buffer = g_new0 (gint16, 3068);
@@ -324,13 +326,14 @@ static void
 genesis_plus_gx_core_run_frame (HsCore *core)
 {
   GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
+  gboolean was_interlaced = interlaced;
 
 //  if (hs_core_get_platform (core) == HS_PLATFORM_SEGA_CD) TODO
 //  system_frame_scd (0);
 // else
   system_frame_gen (0);
 
-  int height_multiplier = interlaced ? 2 : 1;
+  int height_multiplier = (was_interlaced && interlaced) ? 2 : 1;
   hs_software_context_set_area (self->context,
                                 &HS_RECTANGLE_INIT (0, 0,
                                                     bitmap.viewport.w + bitmap.viewport.x * 2,
@@ -338,9 +341,17 @@ genesis_plus_gx_core_run_frame (HsCore *core)
   hs_software_context_set_overscan (self->context,
                                     &HS_BORDER_INIT (bitmap.viewport.x, bitmap.viewport.y * height_multiplier));
 
+  // Treat the first field after switching to interlacing as progressive, but with double rowstride
+  // to avoid showing the (still incomplete and filled with garbage data!) second field
+  // Once the second field has been filled in, we'll switch frontend to interlacing too
+  if (interlaced && !was_interlaced)
+    hs_software_context_set_row_stride (self->context, MAX_WIDTH * 4 * 2);
+  else
+    hs_software_context_set_row_stride (self->context, MAX_WIDTH * 4);
+
   HsInterlacingMode mode;
 
-  if (interlaced) {
+  if (was_interlaced && interlaced) {
     if (odd_frame)
       mode = HS_INTERLACING_EVEN_FIELD;
     else
@@ -351,9 +362,14 @@ genesis_plus_gx_core_run_frame (HsCore *core)
 
   hs_software_context_set_interlacing (self->context, mode);
 
+  int  n_lines = bitmap.viewport.h + bitmap.viewport.y * 2;
+
+  if (interlaced)
+    n_lines *= 2;
+
   memcpy (hs_software_context_acquire_framebuffer (self->context),
           bitmap.data,
-          360 * 576 * 4);
+          MAX_WIDTH * n_lines * 4);
 
   hs_software_context_release_framebuffer (self->context);
 
