@@ -61,7 +61,7 @@ struct _GenesisPlusGXCore
 };
 
 #define SOUND_FREQUENCY 44100
-#define MAX_WIDTH 360
+#define MAX_WIDTH 348
 #define MAX_HEIGHT 576
 
 t_config config;
