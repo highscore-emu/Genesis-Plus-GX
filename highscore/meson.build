@@ -98,6 +98,8 @@ genesis_plus_gx_c_args = [
   '-D_7ZIP_ST',
   '-DHAVE_SYS_PARAM_H',
   '-DHAVE_YM3438_CORE',
+  '-Wno-dangling-pointer',
+  '-Wno-unused-result',
 ]
 
 genesis_plus_gx_include_dirs = [
