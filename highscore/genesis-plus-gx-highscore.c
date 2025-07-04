@@ -145,6 +145,13 @@ load_archive (char *filename, unsigned char *buffer, int max_size, char *extensi
     extension[3] = 0;
   }
 
+  if (!effective_path) {
+    if (is_bios)
+      core->bios_missing = TRUE;
+
+    return 0;
+  }
+
   file = g_file_new_for_path (effective_path);
 
   if (!g_file_query_exists (file, NULL)) {
