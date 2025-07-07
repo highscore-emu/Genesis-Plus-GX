@@ -473,13 +473,13 @@ finish_init (GenesisPlusGXCore *self, GError **error)
   if (platform == HS_PLATFORM_MEGA_CD && !load_backup_ram (self, error))
     return FALSE;
 
+  io_init ();
+  input_reset ();
+
   for (int i = 0; i < HS_MEGA_DRIVE_MAX_PLAYERS; i++) {
     config.input[i].padtype = DEVICE_PAD6B;
     input.system[i] = SYSTEM_GAMEPAD;
   }
-
-  io_init ();
-  input_reset ();
 
   return TRUE;
 }
