@@ -189,7 +189,12 @@ static const int BUTTON_MAP[] = {
 void
 osd_input_update (void)
 {
-  for (int i = 0; i < HS_MEGA_DRIVE_MAX_PLAYERS; i++) {
+  int player = 0;
+
+  for (int i = 0; i < MAX_INPUTS; i++) {
+    if (input.dev[i] == NO_DEVICE)
+      continue;
+
     int buttons = 0;
 
     for (HsMegaDriveButton btn = 0; btn < HS_MEGA_DRIVE_N_BUTTONS; btn++) {
@@ -201,11 +206,12 @@ osd_input_update (void)
       if (input.dev[i] == DEVICE_PAD3B && is_6b_button)
         continue;
 
-      if (core->pad_buttons[i] & 1 << btn)
+      if (core->pad_buttons[player] & 1 << btn)
         buttons |= BUTTON_MAP[btn];
     }
 
-    input.pad[i] = buttons;
+    input.pad[player * 4] = buttons;
+    player++;
   }
 }
 
@@ -249,6 +255,11 @@ set_defaults (void)
   config.overscan = 3; // full overscan
   config.aspect_ratio = 0;
   config.render = 1;
+
+   input.system[0] = SYSTEM_GAMEPAD;
+   input.system[1] = SYSTEM_GAMEPAD;
+   for (int i = 0; i < MAX_INPUTS; i++)
+     config.input[i].padtype = DEVICE_PAD2B | DEVICE_PAD3B | DEVICE_PAD6B;
 }
 
 static gboolean
@@ -432,7 +443,6 @@ save_backup_ram (GenesisPlusGXCore  *self, GError **error)
 
       int file_size = scd.cartridge.mask + 1;
       int done = 0;
-      // TODO
 
       /* Write to file (2k blocks) */
       while (file_size > CHUNK_SIZE) {
@@ -480,6 +490,9 @@ finish_init (GenesisPlusGXCore *self, GError **error)
     config.input[i].padtype = DEVICE_PAD6B;
     input.system[i] = SYSTEM_GAMEPAD;
   }
+
+  old_system[0] = input.system[0];
+  old_system[1] = input.system[1];
 
   return TRUE;
 }
