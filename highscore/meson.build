@@ -25,6 +25,7 @@ genesis_plus_gx_source = [
   '../core/cart_hw/eeprom_93c.c',
   '../core/cart_hw/eeprom_i2c.c',
   '../core/cart_hw/eeprom_spi.c',
+  '../core/cart_hw/flash_cfi.c',
   '../core/cart_hw/ggenie.c',
   '../core/cart_hw/md_cart.c',
   '../core/cart_hw/megasd.c',
