@@ -224,7 +224,7 @@ set_defaults (void)
   config.pcm_volume     = 100;
   config.hq_fm          = 1; /* high-quality FM resampling (slower) */
   config.hq_psg         = 1; /* high-quality PSG resampling (slower) */
-  config.filter         = 1; /* no filter */
+  config.filter         = 0; /* no filter */
   config.lp_range       = 0x9999; /* 0.6 in 0.16 fixed point */
   config.low_freq       = 880;
   config.high_freq      = 5000;
