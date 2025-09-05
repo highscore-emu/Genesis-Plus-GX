@@ -1,6 +1,6 @@
 /****************************************************************************
  *  Genesis Plus
- *  CFI-compliant flash memory (29xxx) support
+ *  YX5200-24SS audio player support
  *
  *  Copyright (C) 2025 Eke-Eke (Genesis Plus GX)
  *
@@ -36,22 +36,15 @@
  *
  ****************************************************************************************/
 
-#ifndef _FLASH_CFI_H_
-#define _FLASH_CFI_H_
-
-/* Supported devices */
-typedef enum
-{
-  M29W320EB = 0,
-  S29GL064N_04,
-  MAX_FLASH_CFI_SUPPORTED_TYPES
-} T_FLASH_CFI_TYPE;
+#ifndef _YX5200_H_
+#define _YX5200_H_
 
 /* Function prototypes */
-extern void flash_cfi_init(T_FLASH_CFI_TYPE type);
-extern void flash_cfi_write(unsigned int address, unsigned int data);
-extern unsigned int flash_cfi_read(unsigned int address);
-extern int flash_cfi_context_save(uint8 *state);
-extern int flash_cfi_context_load(uint8 *state);
+extern void yx5200_init(int samplerate);
+extern void yx5200_reset(void);
+extern void yx5200_write(unsigned int rx_data);
+extern void yx5200_update(unsigned int samples);
+extern int yx5200_context_save(uint8 *state);
+extern int yx5200_context_load(uint8 *state);
 
 #endif
