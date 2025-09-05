@@ -33,6 +33,7 @@ genesis_plus_gx_source = [
   '../core/cart_hw/sram.c',
   '../core/cart_hw/svp/ssp16.c',
   '../core/cart_hw/svp/svp.c',
+  '../core/cart_hw/yx5200.c',
   '../core/cd_hw/cd_cart.c',
   '../core/cd_hw/cdc.c',
   '../core/cd_hw/cdd.c',
@@ -114,6 +115,7 @@ genesis_plus_gx_include_dirs = [
   include_directories('../core/m68k'),
   include_directories('../core/ntsc'),
   include_directories('../core/sound'),
+  include_directories('../core/sound/minimp3'),
   include_directories('../core/z80'),
 ]
 
