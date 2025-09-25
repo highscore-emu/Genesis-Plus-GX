@@ -59,7 +59,6 @@ struct _GenesisPlusGXCore
   guint32 pad_buttons[HS_MEGA_DRIVE_MAX_PLAYERS];
   char *save_path;
 
-  char *cd_bios_paths[3];
   gboolean bios_missing;
 
   guint32 bram_crc[2];
@@ -127,14 +126,16 @@ load_archive (char *filename, unsigned char *buffer, int max_size, char *extensi
 
   core->bios_missing = FALSE;
 
+  hs_core_reset_used_firmware (HS_CORE (core));
+
   if (!g_strcmp0 (filename, CD_BIOS_US)) {
-    effective_path = core->cd_bios_paths[HS_MEGA_CD_BIOS_US];
+    effective_path = hs_core_query_firmware_path (HS_CORE (core), HS_MEGA_CD_FIRMWARE_NORTH_AMERICA);
     is_bios = TRUE;
   } else if (!g_strcmp0 (filename, CD_BIOS_JP)) {
-    effective_path = core->cd_bios_paths[HS_MEGA_CD_BIOS_JP];
+    effective_path = hs_core_query_firmware_path (HS_CORE (core), HS_MEGA_CD_FIRMWARE_JAPAN);
     is_bios = TRUE;
   } else if (!g_strcmp0 (filename, CD_BIOS_EU)) {
-    effective_path = core->cd_bios_paths[HS_MEGA_CD_BIOS_EU];
+    effective_path = hs_core_query_firmware_path (HS_CORE (core), HS_MEGA_CD_FIRMWARE_EUROPE);
     is_bios = TRUE;
   } else {
     effective_path = filename;
@@ -538,7 +539,7 @@ genesis_plus_gx_core_load_rom (HsCore      *core,
           break;
       }
 
-      g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_MISSING_BIOS, "Missing Sega CD %s BIOS", region_name);
+      g_set_error (error, HS_CORE_ERROR, HS_CORE_ERROR_MISSING_FIRMWARE, "Missing Sega CD %s BIOS", region_name);
       return FALSE;
     }
 
@@ -794,11 +795,6 @@ genesis_plus_gx_core_get_region (HsCore *core)
 static void
 genesis_plus_gx_core_finalize (GObject *object)
 {
-  GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (object);
-
-  for (int i = 0; i < 3; i++)
-    g_free (self->cd_bios_paths[i]);
-
   G_OBJECT_CLASS (genesis_plus_gx_core_parent_class)->finalize (object);
 
   core = NULL;
@@ -846,33 +842,8 @@ genesis_plus_gx_mega_drive_core_init (HsMegaDriveCoreInterface *iface)
 }
 
 static void
-genesis_plus_gx_mega_cd_core_set_bios_path (HsMegaCdCore *core,
-                                            HsMegaCdBios  type,
-                                            const char   *path)
-{
-  GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
-
-  g_set_str (&self->cd_bios_paths[type], path);
-}
-
-static HsMegaCdBios
-genesis_plus_gx_mega_cd_core_get_used_bios (HsMegaCdCore *core)
-{
-  switch (region_code) {
-    case REGION_USA:
-      return HS_MEGA_CD_BIOS_US;
-    case REGION_EUROPE:
-      return HS_MEGA_CD_BIOS_EU;
-    default:
-      return HS_MEGA_CD_BIOS_JP;
-  }
-}
-
-static void
 genesis_plus_gx_mega_cd_core_init (HsMegaCdCoreInterface *iface)
 {
-  iface->set_bios_path = genesis_plus_gx_mega_cd_core_set_bios_path;
-  iface->get_used_bios = genesis_plus_gx_mega_cd_core_get_used_bios;
 }
 
 GType
