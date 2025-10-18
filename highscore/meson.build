@@ -40,15 +40,6 @@ genesis_plus_gx_source = [
   '../core/cd_hw/gfx.c',
   '../core/cd_hw/pcm.c',
   '../core/cd_hw/scd.c',
-  '../core/cd_hw/libchdr/src/libchdr_bitstream.c',
-  '../core/cd_hw/libchdr/src/libchdr_cdrom.c',
-  '../core/cd_hw/libchdr/src/libchdr_chd.c',
-  '../core/cd_hw/libchdr/src/libchdr_flac.c',
-  '../core/cd_hw/libchdr/src/libchdr_huffman.c',
-  '../core/cd_hw/libchdr/deps/lzma-24.05/src/CpuArch.c',
-  '../core/cd_hw/libchdr/deps/lzma-24.05/src/LzFind.c',
-  '../core/cd_hw/libchdr/deps/lzma-24.05/src/LzmaDec.c',
-  '../core/cd_hw/libchdr/deps/lzma-24.05/src/LzmaEnc.c',
   '../core/input_hw/activator.c',
   '../core/input_hw/gamepad.c',
   '../core/input_hw/graphic_board.c',
@@ -81,6 +72,7 @@ genesis_plus_gx_deps = [
   dependency('flac'),
   dependency('zlib'),
   dependency('libzstd'),
+  dependency('libchdr'),
   cc.find_library('m', required: false),
 ]
 
