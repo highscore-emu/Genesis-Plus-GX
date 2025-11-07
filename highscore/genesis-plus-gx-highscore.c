@@ -62,6 +62,8 @@ struct _GenesisPlusGXCore
   gboolean bios_missing;
 
   guint32 bram_crc[2];
+
+  int colorburst_phase;
 };
 
 static uint8_t bram_format[0x40] =
@@ -627,7 +629,14 @@ genesis_plus_gx_core_run_frame (HsCore *core)
 
   hs_software_context_set_interlacing (self->context, mode);
 
-  int  n_lines = bitmap.viewport.h + bitmap.viewport.y * 2;
+  hs_software_context_set_colorburst_phase (self->context, self->colorburst_phase);
+
+  if (mode != HS_INTERLACING_ODD_FIELD && vdp_pal)
+    self->colorburst_phase ^= 1;
+  else if (!vdp_pal)
+    self->colorburst_phase = 0;
+
+  int n_lines = bitmap.viewport.h + bitmap.viewport.y * 2;
 
   if (interlaced)
     n_lines *= 2;
