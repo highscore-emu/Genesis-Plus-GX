@@ -7,4 +7,4 @@ Authors=Charles MacDonald;Eke-Eke;
 Copyright=Copyright (c) 1998-2003 Charles MacDonald;Copyright (c) 2007-2023 Eke-Eke;Some portions copyright Nicola Salmoria and the MAME team;
 Website=https://github.com/ekeeke/Genesis-Plus-GX
 LicensePath=genesis-plus-gx.license
-Platforms=MegaDrive;MegaCD;
+Platforms=GameGear;MasterSystem;MegaDrive;MegaCD;SG1000;

@@ -45,6 +45,8 @@
 
 #include "shared.h"
 
+#define MAX_PLAYERS 2
+
 static GenesisPlusGXCore *core;
 
 struct _GenesisPlusGXCore
@@ -56,7 +58,12 @@ struct _GenesisPlusGXCore
 
   gint16 *audio_buffer;
 
-  guint32 pad_buttons[HS_MEGA_DRIVE_MAX_PLAYERS];
+  guint32 buttons[MAX_PLAYERS];
+  gboolean pause_pressed;
+  gboolean light_phaser_fire;
+  double light_phaser_x;
+  double light_phaser_y;
+
   char *save_path;
 
   gboolean bios_missing;
@@ -64,6 +71,9 @@ struct _GenesisPlusGXCore
   guint32 bram_crc[2];
 
   int colorburst_phase;
+
+  gboolean fm_audio;
+  gboolean enable_light_phaser;
 };
 
 static uint8_t bram_format[0x40] =
@@ -95,12 +105,18 @@ char MS_BIOS_EU[256];
 char MS_BIOS_JP[256];
 char MS_BIOS_US[256];
 
+static void genesis_plus_gx_game_gear_core_init (HsGameGearCoreInterface *iface);
+static void genesis_plus_gx_master_system_core_init (HsMasterSystemCoreInterface *iface);
 static void genesis_plus_gx_mega_drive_core_init (HsMegaDriveCoreInterface *iface);
 static void genesis_plus_gx_mega_cd_core_init (HsMegaCdCoreInterface *iface);
+static void genesis_plus_gx_sg1000_core_init (HsSg1000CoreInterface *iface);
 
 G_DEFINE_FINAL_TYPE_WITH_CODE (GenesisPlusGXCore, genesis_plus_gx_core, HS_TYPE_CORE,
+                               G_IMPLEMENT_INTERFACE (HS_TYPE_GAME_GEAR_CORE, genesis_plus_gx_game_gear_core_init)
+                               G_IMPLEMENT_INTERFACE (HS_TYPE_MASTER_SYSTEM_CORE, genesis_plus_gx_master_system_core_init)
                                G_IMPLEMENT_INTERFACE (HS_TYPE_MEGA_DRIVE_CORE, genesis_plus_gx_mega_drive_core_init)
-                               G_IMPLEMENT_INTERFACE (HS_TYPE_MEGA_CD_CORE, genesis_plus_gx_mega_cd_core_init))
+                               G_IMPLEMENT_INTERFACE (HS_TYPE_MEGA_CD_CORE, genesis_plus_gx_mega_cd_core_init)
+                               G_IMPLEMENT_INTERFACE (HS_TYPE_SG1000_CORE, genesis_plus_gx_sg1000_core_init))
 
 void
 ROMCheatUpdate (void)
@@ -182,45 +198,141 @@ load_archive (char *filename, unsigned char *buffer, int max_size, char *extensi
   return size;
 }
 
-static const int BUTTON_MAP[] = {
+static const int GG_BUTTON_MAP[] = {
+  INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT,
+  INPUT_B, INPUT_C,
+  INPUT_START,
+};
+
+static const int SMS_BUTTON_MAP[] = {
+  INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT,
+  INPUT_B, INPUT_C
+};
+
+static const int MD_BUTTON_MAP[] = {
   INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT,
   INPUT_A, INPUT_B, INPUT_C,
   INPUT_X, INPUT_Y, INPUT_Z,
   INPUT_START, INPUT_MODE
 };
 
-void
-osd_input_update (void)
+static void
+update_gamepad_gg (int player, uint8 device)
 {
-  int player = 0;
+  int buttons = 0;
 
-  for (int i = 0; i < MAX_INPUTS; i++) {
-    if (input.dev[i] == NO_DEVICE)
-      continue;
+  if (player != 0)
+    return;
 
-    int buttons = 0;
-
-    for (HsMegaDriveButton btn = 0; btn < HS_MEGA_DRIVE_N_BUTTONS; btn++) {
-      gboolean is_6b_button = btn == HS_MEGA_DRIVE_BUTTON_X ||
-                              btn == HS_MEGA_DRIVE_BUTTON_Y ||
-                              btn == HS_MEGA_DRIVE_BUTTON_Z ||
-                              btn == HS_MEGA_DRIVE_BUTTON_MODE;
-
-      if (input.dev[i] == DEVICE_PAD3B && is_6b_button)
-        continue;
-
-      if (core->pad_buttons[player] & 1 << btn)
-        buttons |= BUTTON_MAP[btn];
-    }
-
-    input.pad[player * 4] = buttons;
-    player++;
+  for (int btn = 0; btn < HS_GAME_GEAR_N_BUTTONS; btn++) {
+    if (core->buttons[player] & 1 << btn)
+      buttons |= GG_BUTTON_MAP[btn];
   }
+
+  input.pad[player * 4] = buttons;
 }
 
 static void
-set_defaults (void)
+update_gamepad_md (int player, uint8 device)
 {
+  int buttons = 0;
+
+  for (int btn = 0; btn < HS_MEGA_DRIVE_N_BUTTONS; btn++) {
+    gboolean is_6b_button = btn == HS_MEGA_DRIVE_BUTTON_X ||
+                            btn == HS_MEGA_DRIVE_BUTTON_Y ||
+                            btn == HS_MEGA_DRIVE_BUTTON_Z ||
+                            btn == HS_MEGA_DRIVE_BUTTON_MODE;
+
+    if (input.dev[player] == DEVICE_PAD3B && is_6b_button)
+      continue;
+
+    if (core->buttons[player] & 1 << btn)
+      buttons |= MD_BUTTON_MAP[btn];
+  }
+
+  input.pad[player * 4] = buttons;
+}
+
+static void
+update_gamepad_sms (int player, uint8 device)
+{
+  int buttons = 0;
+
+  for (int btn = 0; btn < HS_MASTER_SYSTEM_N_BUTTONS; btn++) {
+    if (core->buttons[player] & 1 << btn)
+      buttons |= SMS_BUTTON_MAP[btn];
+  }
+
+  if (core->pause_pressed)
+    buttons |= INPUT_START;
+
+  input.pad[player * 4] = buttons;
+}
+
+void
+osd_input_update (void)
+{
+  HsPlatform platform = hs_core_get_platform (HS_CORE (core));
+  HsPlatform base_platform = hs_platform_get_base_platform (platform);
+  int player = 0;
+  int buttons = 0;
+
+  for (int i = 0; i < MAX_INPUTS; i++) {
+    switch (input.dev[i]) {
+      case DEVICE_PAD2B:
+      case DEVICE_PAD3B:
+      case DEVICE_PAD6B:
+        if (base_platform == HS_PLATFORM_MEGA_DRIVE)
+          update_gamepad_md (i, input.dev[i]);
+        else if (base_platform == HS_PLATFORM_GAME_GEAR)
+          update_gamepad_gg (i, input.dev[i]);
+        else
+          update_gamepad_sms (i, input.dev[i]);
+
+        player++;
+        break;
+      case DEVICE_LIGHTGUN:
+        input.analog[i][0] = (int16) (core->light_phaser_x * bitmap.viewport.w);
+        input.analog[i][1] = (int16) (core->light_phaser_y * bitmap.viewport.h);
+
+        if (core->light_phaser_fire)
+          buttons |= INPUT_A;
+
+        input.pad[i] = buttons;
+        break;
+      case NO_DEVICE:
+        break;
+      default:
+        g_assert_not_reached ();
+    }
+  }
+}
+
+static gboolean
+update_fm_audio (GenesisPlusGXCore *self)
+{
+  HsPlatform platform = hs_core_get_platform (HS_CORE (self));
+
+  if (platform != HS_PLATFORM_MASTER_SYSTEM) {
+    config.ym2413 = 0;
+    return FALSE;
+  }
+
+  gboolean was_fm_audio = !!config.ym2413;
+
+  if (was_fm_audio == self->fm_audio)
+    return FALSE;
+
+  config.ym2413 = self->fm_audio ? 1 : 0;
+
+  return TRUE;
+}
+
+static void
+set_defaults (GenesisPlusGXCore *self)
+{
+  HsPlatform platform = hs_core_get_platform (HS_CORE (self));
+
   config.psg_preamp     = 150;
   config.fm_preamp      = 100;
   config.cdda_volume    = 100;
@@ -237,7 +349,7 @@ set_defaults (void)
   config.ym2612         = YM2612_DISCRETE;
   config.mono           = 0; /* STEREO output */
 #ifdef HAVE_YM3438_CORE
-   config.ym3438         = 0;
+  config.ym3438         = 0;
 #endif
 
   /* system options */
@@ -255,14 +367,17 @@ set_defaults (void)
   config.enhanced_vscroll_limit = 8;
 
   /* video options */
-  config.overscan = 3; // full overscan
+  if (platform == HS_PLATFORM_GAME_GEAR)
+    config.overscan = 0; // no overscan
+  else
+    config.overscan = 3; // full overscan
   config.aspect_ratio = 0;
   config.render = 1;
 
-   input.system[0] = SYSTEM_GAMEPAD;
-   input.system[1] = SYSTEM_GAMEPAD;
-   for (int i = 0; i < MAX_INPUTS; i++)
-     config.input[i].padtype = DEVICE_PAD2B | DEVICE_PAD3B | DEVICE_PAD6B;
+  input.system[0] = SYSTEM_GAMEPAD;
+  input.system[1] = SYSTEM_GAMEPAD;
+  for (int i = 0; i < MAX_INPUTS; i++)
+    config.input[i].padtype = DEVICE_PAD2B | DEVICE_PAD3B | DEVICE_PAD6B;
 }
 
 static gboolean
@@ -477,6 +592,7 @@ static gboolean
 finish_init (GenesisPlusGXCore *self, GError **error)
 {
   HsPlatform platform = hs_core_get_platform (HS_CORE (self));
+  HsPlatform base_platform = hs_platform_get_base_platform (platform);
 
   if (platform != HS_PLATFORM_MEGA_CD && !load_save_ram (self, error))
     return FALSE;
@@ -489,9 +605,26 @@ finish_init (GenesisPlusGXCore *self, GError **error)
   io_init ();
   input_reset ();
 
-  for (int i = 0; i < HS_MEGA_DRIVE_MAX_PLAYERS; i++) {
-    config.input[i].padtype = DEVICE_PAD6B;
-    input.system[i] = SYSTEM_GAMEPAD;
+  if (base_platform == HS_PLATFORM_GAME_GEAR) {
+    config.input[0].padtype = DEVICE_PAD2B;
+    input.system[0] = SYSTEM_GAMEPAD;
+
+    input.system[1] = NO_SYSTEM;
+  } else if (base_platform == HS_PLATFORM_MEGA_DRIVE) {
+    for (int i = 0; i < HS_MEGA_DRIVE_MAX_PLAYERS; i++) {
+      config.input[i].padtype = DEVICE_PAD6B;
+      input.system[i] = SYSTEM_GAMEPAD;
+    }
+  } else {
+    if (self->enable_light_phaser) {
+      input.system[0] = SYSTEM_LIGHTPHASER;
+      input.system[1] = NO_SYSTEM;
+    } else {
+      for (int i = 0; i < HS_MASTER_SYSTEM_MAX_PLAYERS; i++) {
+        config.input[i].padtype = DEVICE_PAD2B;
+        input.system[i] = SYSTEM_GAMEPAD;
+      }
+    }
   }
 
   old_system[0] = input.system[0];
@@ -521,7 +654,8 @@ genesis_plus_gx_core_load_rom (HsCore      *core,
 
   self->audio_buffer = g_new0 (gint16, 3068);
 
-  set_defaults ();
+  set_defaults (self);
+  update_fm_audio (self);
 
   // TODO clear disk interface
 
@@ -571,6 +705,7 @@ genesis_plus_gx_core_reset (HsCore *core, gboolean hard, GError **error)
   gen_reset (hard);
 
   if (hard) {
+    update_fm_audio (self);
     system_init ();
 
     if (!finish_init (self, error))
@@ -584,29 +719,69 @@ static void
 genesis_plus_gx_core_poll_input (HsCore *core, HsInputState *input_state)
 {
   GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
+  HsPlatform platform = hs_core_get_platform (core);
+  HsPlatform base_platform = hs_platform_get_base_platform (platform);
 
-  for (int i = 0; i < HS_MEGA_DRIVE_MAX_PLAYERS; i++)
-    self->pad_buttons[i] = input_state->mega_drive.pad_buttons[i];
+  if (base_platform == HS_PLATFORM_GAME_GEAR)
+    self->buttons[0] = input_state->game_gear.buttons;
+
+  if (base_platform == HS_PLATFORM_MASTER_SYSTEM) {
+    for (int i = 0; i < HS_MASTER_SYSTEM_MAX_PLAYERS; i++)
+      self->buttons[i] = input_state->master_system.pad_buttons[i];
+
+    self->pause_pressed = input_state->master_system.pause_button;
+
+    self->light_phaser_x = input_state->master_system.light_phaser_x;
+    self->light_phaser_y = input_state->master_system.light_phaser_y;
+    self->light_phaser_fire = input_state->master_system.light_phaser_fire;
+  }
+
+  if (base_platform == HS_PLATFORM_MEGA_DRIVE) {
+    for (int i = 0; i < HS_MEGA_DRIVE_MAX_PLAYERS; i++)
+      self->buttons[i] = input_state->mega_drive.pad_buttons[i];
+  }
+
+  if (base_platform == HS_PLATFORM_SG1000) {
+    for (int i = 0; i < HS_SG1000_MAX_PLAYERS; i++)
+      self->buttons[i] = input_state->sg1000.pad_buttons[i];
+
+    self->pause_pressed = input_state->sg1000.pause_button;
+  }
 }
 
 static void
 genesis_plus_gx_core_run_frame (HsCore *core)
 {
   GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
+  HsPlatform platform = hs_core_get_platform (core);
   gboolean was_interlaced = interlaced;
 
-  if (hs_core_get_platform (core) == HS_PLATFORM_MEGA_CD)
-    system_frame_scd (0);
-  else
-    system_frame_gen (0);
+  switch (platform) {
+    case HS_PLATFORM_MEGA_DRIVE:
+      system_frame_gen (0);
+      break;
+    case HS_PLATFORM_MEGA_CD:
+      system_frame_scd (0);
+      break;
+    case HS_PLATFORM_GAME_GEAR:
+    case HS_PLATFORM_MASTER_SYSTEM:
+    case HS_PLATFORM_SG1000:
+      system_frame_sms (0);
+      break;
+    default:
+      g_assert_not_reached ();
+  }
 
   int height_multiplier = (was_interlaced && interlaced) ? 2 : 1;
   hs_software_context_set_area (self->context,
                                 &HS_RECTANGLE_INIT (0, 0,
                                                     bitmap.viewport.w + bitmap.viewport.x * 2,
                                                     (bitmap.viewport.h + bitmap.viewport.y * 2) * height_multiplier));
-  hs_software_context_set_overscan (self->context,
-                                    &HS_BORDER_INIT (bitmap.viewport.x, bitmap.viewport.y * height_multiplier));
+
+  if (platform != HS_PLATFORM_GAME_GEAR) {
+    hs_software_context_set_overscan (self->context,
+                                      &HS_BORDER_INIT (bitmap.viewport.x, bitmap.viewport.y * height_multiplier));
+  }
 
   // Treat the first field after switching to interlacing as progressive, but with double rowstride
   // to avoid showing the (still incomplete and filled with garbage data!) second field
@@ -746,6 +921,7 @@ genesis_plus_gx_core_load_state (HsCore          *core,
                                  const char      *path,
                                  HsStateCallback  callback)
 {
+  GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
   g_autofree char *data = NULL;
   gsize size;
   GError *error = NULL;
@@ -759,6 +935,15 @@ genesis_plus_gx_core_load_state (HsCore          *core,
     g_set_error (&error, HS_CORE_ERROR, HS_CORE_ERROR_INTERNAL, "Too large savestate size: %lu, expected %d", size, STATE_SIZE);
     callback (core, &error);
     return;
+  }
+
+  if (update_fm_audio (self)) {
+    system_init ();
+
+    if (!finish_init (self, &error)) {
+      callback (core, &error);
+      return;
+    }
   }
 
   if (!state_load ((guint8 *) data)) {
@@ -779,14 +964,22 @@ genesis_plus_gx_core_get_frame_rate (HsCore *core)
 static double
 genesis_plus_gx_core_get_aspect_ratio (HsCore *core)
 {
-  gboolean is_h40 = bitmap.viewport.w == 320; /* Could be read directly from the register as well. */
-  double dotrate = system_clock / (is_h40 ? 8.0 : 10.0);
-  double videosamplerate = vdp_pal ? 14750000.0 : 135000000.0 / 11.0;
 
   int width = bitmap.viewport.w + bitmap.viewport.x * 2;
   int height = bitmap.viewport.h + bitmap.viewport.y * 2;
+  double par;
 
-  return (videosamplerate / dotrate) * ((double) width / ((double) height * 2.0));
+  if (hs_core_get_platform (core) == HS_PLATFORM_GAME_GEAR) {
+    par = 6.0 / 5.0;
+  } else {
+    gboolean is_h40 = bitmap.viewport.w == 320; /* Could be read directly from the register as well. */
+    double dotrate = system_clock / (is_h40 ? 8.0 : 10.0);
+    double videosamplerate = vdp_pal ? 14750000.0 : 135000000.0 / 11.0;
+
+    par = videosamplerate / dotrate / 2.0;
+  }
+
+  return par * ((double) width / (double) height);
 }
 
 static double
@@ -846,12 +1039,47 @@ genesis_plus_gx_core_init (GenesisPlusGXCore *self)
 }
 
 static void
+genesis_plus_gx_game_gear_core_init (HsGameGearCoreInterface *iface)
+{
+}
+
+static void
+genesis_plus_gx_master_system_core_set_enable_fm_audio (HsMasterSystemCore *core,
+                                                        gboolean            enable_fm_audio)
+{
+  GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
+
+  self->fm_audio = enable_fm_audio;
+}
+
+static void
+genesis_plus_gx_master_system_core_set_enable_light_phaser (HsMasterSystemCore *core,
+                                                            gboolean            enable_light_phaser)
+{
+  GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
+
+  self->enable_light_phaser = enable_light_phaser;
+}
+
+static void
+genesis_plus_gx_master_system_core_init (HsMasterSystemCoreInterface *iface)
+{
+  iface->set_enable_fm_audio = genesis_plus_gx_master_system_core_set_enable_fm_audio;
+  iface->set_enable_light_phaser = genesis_plus_gx_master_system_core_set_enable_light_phaser;
+}
+
+static void
 genesis_plus_gx_mega_drive_core_init (HsMegaDriveCoreInterface *iface)
 {
 }
 
 static void
 genesis_plus_gx_mega_cd_core_init (HsMegaCdCoreInterface *iface)
+{
+}
+
+static void
+genesis_plus_gx_sg1000_core_init (HsSg1000CoreInterface *iface)
 {
 }
 
