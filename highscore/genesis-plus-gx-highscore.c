@@ -263,7 +263,7 @@ update_gamepad_sms (int player, uint8 device)
       buttons |= SMS_BUTTON_MAP[btn];
   }
 
-  if (core->pause_pressed)
+  if (player == 0 && core->pause_pressed)
     buttons |= INPUT_START;
 
   input.pad[player * 4] = buttons;
