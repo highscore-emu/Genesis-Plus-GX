@@ -275,9 +275,10 @@ osd_input_update (void)
   HsPlatform platform = hs_core_get_platform (HS_CORE (core));
   HsPlatform base_platform = hs_platform_get_base_platform (platform);
   int player = 0;
-  int buttons = 0;
 
   for (int i = 0; i < MAX_INPUTS; i++) {
+    int buttons = 0;
+
     switch (input.dev[i]) {
       case DEVICE_PAD2B:
       case DEVICE_PAD3B:
@@ -291,17 +292,22 @@ osd_input_update (void)
 
         player++;
         break;
+
       case DEVICE_LIGHTGUN:
         input.analog[i][0] = (int16) (core->light_phaser_x * bitmap.viewport.w);
         input.analog[i][1] = (int16) (core->light_phaser_y * bitmap.viewport.h);
 
         if (core->light_phaser_fire)
           buttons |= INPUT_A;
+        if (player == 0 && core->pause_pressed)
+          buttons |= INPUT_START;
 
         input.pad[i] = buttons;
         break;
+
       case NO_DEVICE:
         break;
+
       default:
         g_assert_not_reached ();
     }
