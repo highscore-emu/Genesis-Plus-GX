@@ -200,13 +200,13 @@ load_archive (char *filename, unsigned char *buffer, int max_size, char *extensi
 
 static const int GG_BUTTON_MAP[] = {
   INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT,
-  INPUT_B, INPUT_C,
+  INPUT_BUTTON1, INPUT_BUTTON2,
   INPUT_START,
 };
 
 static const int SMS_BUTTON_MAP[] = {
   INPUT_UP, INPUT_DOWN, INPUT_LEFT, INPUT_RIGHT,
-  INPUT_B, INPUT_C
+  INPUT_BUTTON1, INPUT_BUTTON2
 };
 
 static const int MD_BUTTON_MAP[] = {
