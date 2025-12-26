@@ -63,6 +63,9 @@ struct _GenesisPlusGXCore
   gboolean light_phaser_fire;
   double light_phaser_x;
   double light_phaser_y;
+  gboolean paddle_button;
+  double paddle_position;
+  int paddle_value;
 
   char *save_path;
 
@@ -73,7 +76,7 @@ struct _GenesisPlusGXCore
   int colorburst_phase;
 
   gboolean fm_audio;
-  gboolean enable_light_phaser;
+  HsMasterSystemAccessory sms_accessory;
 };
 
 static uint8_t bram_format[0x40] =
@@ -299,6 +302,17 @@ osd_input_update (void)
 
         if (core->light_phaser_fire)
           buttons |= INPUT_A;
+        if (player == 0 && core->pause_pressed)
+          buttons |= INPUT_START;
+
+        input.pad[i] = buttons;
+        break;
+
+      case DEVICE_PADDLE:
+        input.analog[i][0] = core->paddle_value;/* 0-255 */
+
+        if (core->paddle_button)
+          buttons |= INPUT_BUTTON1;
         if (player == 0 && core->pause_pressed)
           buttons |= INPUT_START;
 
@@ -622,14 +636,23 @@ finish_init (GenesisPlusGXCore *self, GError **error)
       input.system[i] = SYSTEM_GAMEPAD;
     }
   } else {
-    if (self->enable_light_phaser) {
-      input.system[0] = SYSTEM_LIGHTPHASER;
-      input.system[1] = NO_SYSTEM;
-    } else {
-      for (int i = 0; i < HS_MASTER_SYSTEM_MAX_PLAYERS; i++) {
-        config.input[i].padtype = DEVICE_PAD2B;
-        input.system[i] = SYSTEM_GAMEPAD;
-      }
+    switch (self->sms_accessory) {
+      case HS_MASTER_SYSTEM_ACCESSORY_NONE:
+        for (int i = 0; i < HS_MASTER_SYSTEM_MAX_PLAYERS; i++) {
+          config.input[i].padtype = DEVICE_PAD2B;
+          input.system[i] = SYSTEM_GAMEPAD;
+        }
+        break;
+      case HS_MASTER_SYSTEM_ACCESSORY_LIGHT_PHASER:
+        input.system[0] = SYSTEM_LIGHTPHASER;
+        input.system[1] = NO_SYSTEM;
+        break;
+      case HS_MASTER_SYSTEM_ACCESSORY_PADDLE:
+        input.system[0] = SYSTEM_PADDLE;
+        input.system[1] = NO_SYSTEM;
+        break;
+      default:
+        g_assert_not_reached ();
     }
   }
 
@@ -721,6 +744,21 @@ genesis_plus_gx_core_reset (HsCore *core, gboolean hard, GError **error)
   return TRUE;
 }
 
+static int
+get_paddle_position (GenesisPlusGXCore *self, HsInputState *input_state)
+{
+  double axis = input_state->master_system.paddle_position;
+  double speed = input_state->master_system.paddle_speed;
+  double fps = hs_core_get_frame_rate (HS_CORE (self));
+
+  if (!isnan (axis))
+    return CLAMP (128 + (int) round (axis * 128.0), 0, 255);
+
+  self->paddle_position = CLAMP (self->paddle_position + speed / fps, -1, 1);
+
+  return CLAMP (128 + (int) round (self->paddle_position * 128.0), 0, 255);
+}
+
 static void
 genesis_plus_gx_core_poll_input (HsCore *core, HsInputState *input_state)
 {
@@ -740,6 +778,9 @@ genesis_plus_gx_core_poll_input (HsCore *core, HsInputState *input_state)
     self->light_phaser_x = input_state->master_system.light_phaser_x;
     self->light_phaser_y = input_state->master_system.light_phaser_y;
     self->light_phaser_fire = input_state->master_system.light_phaser_fire;
+
+    self->paddle_button = input_state->master_system.paddle_button;
+    self->paddle_value = get_paddle_position (self, input_state);
   }
 
   if (base_platform == HS_PLATFORM_MEGA_DRIVE) {
@@ -1059,19 +1100,19 @@ genesis_plus_gx_master_system_core_set_enable_fm_audio (HsMasterSystemCore *core
 }
 
 static void
-genesis_plus_gx_master_system_core_set_enable_light_phaser (HsMasterSystemCore *core,
-                                                            gboolean            enable_light_phaser)
+genesis_plus_gx_master_system_core_set_accessory (HsMasterSystemCore      *core,
+                                                  HsMasterSystemAccessory  accessory)
 {
   GenesisPlusGXCore *self = GENESIS_PLUS_GX_CORE (core);
 
-  self->enable_light_phaser = enable_light_phaser;
+  self->sms_accessory = accessory;
 }
 
 static void
 genesis_plus_gx_master_system_core_init (HsMasterSystemCoreInterface *iface)
 {
   iface->set_enable_fm_audio = genesis_plus_gx_master_system_core_set_enable_fm_audio;
-  iface->set_enable_light_phaser = genesis_plus_gx_master_system_core_set_enable_light_phaser;
+  iface->set_accessory = genesis_plus_gx_master_system_core_set_accessory;
 }
 
 static void
