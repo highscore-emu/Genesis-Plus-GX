@@ -2,7 +2,7 @@ project('genesis-plus-gx-highscore', 'c',
   version : '1.7.5',
 )
 
-commit = run_command('git', 'describe', '--always', '--dirty', '--match', '').stdout().strip()
+commit = run_command('git', 'describe', '--always', '--dirty', '--match', '', check: false).stdout().strip()
 version = meson.project_version()
 
 cc = meson.get_compiler('c')
