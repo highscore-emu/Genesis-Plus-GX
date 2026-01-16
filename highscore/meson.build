@@ -47,6 +47,7 @@ genesis_plus_gx_source = [
   '../core/input_hw/lightgun.c',
   '../core/input_hw/mouse.c',
   '../core/input_hw/paddle.c',
+  '../core/input_hw/smash.c',
   '../core/input_hw/sportspad.c',
   '../core/input_hw/teamplayer.c',
   '../core/input_hw/terebi_oekaki.c',
