@@ -724,7 +724,34 @@ void md_cart_init(void)
       m68k.memory_map[i].read16   = NULL;
       m68k.memory_map[i].write8   = m68k_unused_8_w;
       m68k.memory_map[i].write16  = m68k_unused_16_w;
-      zbank_memory_map[i].read    = zbank_unused_r;
+      zbank_memory_map[i].read    = NULL;
+      zbank_memory_map[i].write   = zbank_unused_w;
+    }
+  }
+  else if (strstr(rominfo.ROMType, "GM") && strstr(rominfo.product, "00000000-00") &&
+            ((rominfo.checksum == 0x2284) && (rominfo.realchecksum == 0x8dcf))) /* Death & Lead */
+  {
+    /* KAISER WAVE board !TIME handler */
+    cart.hw.time_w = mapper_kaiserwave_w;
+
+    /* enable YX5200 hardware */
+    cart.special |= HW_YX5200;
+
+    /* allocate & clear blip buffer for YX5200 audio stream */
+    snd.blips[3] = blip_new(snd.sample_rate / 10);
+    if (snd.blips[3]) blip_clear(snd.blips[3]);
+
+    /* initialize YX5200 audio */
+    yx5200_init(snd.sample_rate);
+
+    /* 64M extension mapping (upper 4MB of flash memory is apparently unused but still accessible as cartridge board uses same signals as described in https://gitlab.com/doragasu/flatmap64) */
+    for (i=0x40; i<0x80; i++)
+    {
+      m68k.memory_map[i].read8    = NULL;
+      m68k.memory_map[i].read16   = NULL;
+      m68k.memory_map[i].write8   = m68k_unused_8_w;
+      m68k.memory_map[i].write16  = m68k_unused_16_w;
+      zbank_memory_map[i].read    = NULL;
       zbank_memory_map[i].write   = zbank_unused_w;
     }
   }
