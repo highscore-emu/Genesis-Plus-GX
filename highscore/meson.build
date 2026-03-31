@@ -140,6 +140,6 @@ configure_file(
 )
 
 install_data(
-  'genesis-plus-gx.license',
+  '..' / 'LICENSE.txt',
   install_dir: core_dir,
 )
