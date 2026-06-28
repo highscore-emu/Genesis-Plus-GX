@@ -999,6 +999,8 @@ genesis_plus_gx_core_load_state (HsCore          *core,
     return;
   }
 
+  self->colorburst_phase = hs_core_get_colorburst_phase (core);
+
   callback (core, NULL);
 }
 
