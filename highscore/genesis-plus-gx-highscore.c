@@ -739,9 +739,9 @@ genesis_plus_gx_core_reset (HsCore *core, gboolean hard, GError **error)
 
     if (!finish_init (self, error))
       return FALSE;
-  }
 
-  self->colorburst_phase = 0;
+    self->colorburst_phase = 0;
+  }
 
   return TRUE;
 }
