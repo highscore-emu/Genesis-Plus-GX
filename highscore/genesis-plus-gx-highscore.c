@@ -853,12 +853,21 @@ genesis_plus_gx_core_run_frame (HsCore *core)
 
   hs_software_context_set_interlacing (self->context, mode);
 
-  hs_software_context_set_colorburst_phase (self->context, self->colorburst_phase);
+  if (platform == HS_PLATFORM_MEGA_DRIVE || platform == HS_PLATFORM_MEGA_CD) {
+    if (vdp_pal) {
+      hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 640.0, 0.5, self->colorburst_phase / 2.0);
 
-  if (mode != HS_INTERLACING_ODD_FIELD && vdp_pal)
-    self->colorburst_phase ^= 1;
-  else if (!vdp_pal)
-    self->colorburst_phase = 0;
+      if (mode != HS_INTERLACING_ODD_FIELD)
+        self->colorburst_phase ^= 1;
+    } else {
+      hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 512.0, 0.0, 0.25);
+    }
+  } else {
+    if (vdp_pal)
+      hs_software_context_set_colorburst (self->context, 1.2, 0.0, 0.0);
+    else
+      hs_software_context_set_colorburst (self->context, 1.5, 0.0, -1.0 / 6.0);
+  }
 
   int n_lines = bitmap.viewport.h + bitmap.viewport.y * 2;
 
@@ -1001,7 +1010,7 @@ genesis_plus_gx_core_load_state (HsCore          *core,
     return;
   }
 
-  self->colorburst_phase = hs_core_get_colorburst_phase (core);
+  self->colorburst_phase = (hs_core_get_colorburst_offset (core) > 0.3) ? 1 : 0;
 
   callback (core, NULL);
 }
