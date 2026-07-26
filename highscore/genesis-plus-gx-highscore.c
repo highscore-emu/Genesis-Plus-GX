@@ -821,32 +821,23 @@ genesis_plus_gx_core_run_frame (HsCore *core)
       g_assert_not_reached ();
   }
 
-  int height_multiplier = (was_interlaced && interlaced) ? 2 : 1;
   hs_software_context_set_area (self->context,
                                 &HS_RECTANGLE_INIT (0, 0,
                                                     bitmap.viewport.w + bitmap.viewport.x * 2,
-                                                    (bitmap.viewport.h + bitmap.viewport.y * 2) * height_multiplier));
+                                                    bitmap.viewport.h + bitmap.viewport.y * 2));
 
   if (platform != HS_PLATFORM_GAME_GEAR) {
     hs_software_context_set_overscan (self->context,
-                                      &HS_BORDER_INIT (bitmap.viewport.x, bitmap.viewport.y * height_multiplier));
+                                      &HS_BORDER_INIT (bitmap.viewport.x, bitmap.viewport.y));
   }
-
-  // Treat the first field after switching to interlacing as progressive, but with double rowstride
-  // to avoid showing the (still incomplete and filled with garbage data!) second field
-  // Once the second field has been filled in, we'll switch frontend to interlacing too
-  if (interlaced && !was_interlaced)
-    hs_software_context_set_row_stride (self->context, MAX_WIDTH * 4 * 2);
-  else
-    hs_software_context_set_row_stride (self->context, MAX_WIDTH * 4);
 
   HsInterlacingMode mode;
 
   if (was_interlaced && interlaced) {
     if (odd_frame)
-      mode = HS_INTERLACING_EVEN_FIELD;
-    else
       mode = HS_INTERLACING_ODD_FIELD;
+    else
+      mode = HS_INTERLACING_EVEN_FIELD;
   } else {
     mode = HS_INTERLACING_NONE;
   }
@@ -871,8 +862,15 @@ genesis_plus_gx_core_run_frame (HsCore *core)
 
   int n_lines = bitmap.viewport.h + bitmap.viewport.y * 2;
 
-  if (interlaced)
+  if (interlaced) {
+    hs_software_context_set_row_stride (self->context, MAX_WIDTH * 4 * 2);
+
     n_lines *= 2;
+  } else {
+    hs_software_context_set_row_stride (self->context, MAX_WIDTH * 4);
+  }
+
+  hs_software_context_set_offset (self->context, (mode == HS_INTERLACING_EVEN_FIELD) ? MAX_WIDTH * 4 : 0);
 
   memcpy (hs_software_context_acquire_framebuffer (self->context),
           bitmap.data,
