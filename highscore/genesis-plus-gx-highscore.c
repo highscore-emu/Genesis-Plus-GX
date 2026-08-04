@@ -73,8 +73,6 @@ struct _GenesisPlusGXCore
 
   guint32 bram_crc[2];
 
-  int colorburst_phase;
-
   gboolean fm_audio;
   HsMasterSystemAccessory sms_accessory;
 };
@@ -89,7 +87,7 @@ static uint8_t bram_format[0x40] =
 
 #define SOUND_FREQUENCY 44100
 #define MAX_WIDTH 348
-#define MAX_HEIGHT 576
+#define MAX_HEIGHT 288
 
 #define CHUNK_SIZE 0x10000
 
@@ -392,7 +390,7 @@ set_defaults (GenesisPlusGXCore *self)
   else
     config.overscan = 3; // full overscan
   config.aspect_ratio = 0;
-  config.render = 1;
+  config.render = 0;
 
   input.system[0] = SYSTEM_GAMEPAD;
   input.system[1] = SYSTEM_GAMEPAD;
@@ -739,8 +737,6 @@ genesis_plus_gx_core_reset (HsCore *core, gboolean hard, GError **error)
 
     if (!finish_init (self, error))
       return FALSE;
-
-    self->colorburst_phase = 0;
   }
 
   return TRUE;
@@ -805,6 +801,8 @@ genesis_plus_gx_core_run_frame (HsCore *core)
   HsPlatform platform = hs_core_get_platform (core);
   gboolean was_interlaced = interlaced;
 
+  gboolean is_odd_frame = odd_frame;
+
   switch (platform) {
     case HS_PLATFORM_MEGA_DRIVE:
       system_frame_gen (0);
@@ -834,7 +832,7 @@ genesis_plus_gx_core_run_frame (HsCore *core)
   HsInterlacingMode mode;
 
   if (was_interlaced && interlaced) {
-    if (odd_frame)
+    if (is_odd_frame)
       mode = HS_INTERLACING_ODD_FIELD;
     else
       mode = HS_INTERLACING_EVEN_FIELD;
@@ -845,14 +843,10 @@ genesis_plus_gx_core_run_frame (HsCore *core)
   hs_software_context_set_interlacing (self->context, mode);
 
   if (platform == HS_PLATFORM_MEGA_DRIVE || platform == HS_PLATFORM_MEGA_CD) {
-    if (vdp_pal) {
-      hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 640.0, 0.5, self->colorburst_phase / 2.0);
-
-      if (mode != HS_INTERLACING_ODD_FIELD)
-        self->colorburst_phase ^= 1;
-    } else {
+    if (vdp_pal)
+      hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 640.0, 0.5, 0.0);
+    else
       hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 512.0, 0.0, 0.25);
-    }
   } else {
     if (vdp_pal)
       hs_software_context_set_colorburst (self->context, 1.2, 0.0, 0.0);
@@ -860,21 +854,9 @@ genesis_plus_gx_core_run_frame (HsCore *core)
       hs_software_context_set_colorburst (self->context, 1.5, 0.0, -1.0 / 6.0);
   }
 
-  int n_lines = bitmap.viewport.h + bitmap.viewport.y * 2;
-
-  if (interlaced) {
-    hs_software_context_set_row_stride (self->context, MAX_WIDTH * 4 * 2);
-
-    n_lines *= 2;
-  } else {
-    hs_software_context_set_row_stride (self->context, MAX_WIDTH * 4);
-  }
-
-  hs_software_context_set_offset (self->context, (mode == HS_INTERLACING_EVEN_FIELD) ? MAX_WIDTH * 4 : 0);
-
   memcpy (hs_software_context_acquire_framebuffer (self->context),
           bitmap.data,
-          MAX_WIDTH * n_lines * 4);
+          MAX_WIDTH * MAX_HEIGHT * 4);
 
   hs_software_context_release_framebuffer (self->context);
 
@@ -1007,8 +989,6 @@ genesis_plus_gx_core_load_state (HsCore          *core,
     callback (core, &error);
     return;
   }
-
-  self->colorburst_phase = (hs_core_get_colorburst_offset (core) > 0.3) ? 1 : 0;
 
   callback (core, NULL);
 }
