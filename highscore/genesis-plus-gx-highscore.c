@@ -844,7 +844,7 @@ genesis_plus_gx_core_run_frame (HsCore *core)
 
   if (platform == HS_PLATFORM_MEGA_DRIVE || platform == HS_PLATFORM_MEGA_CD) {
     if (vdp_pal)
-      hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 640.0, 0.5, 0.0);
+      hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 640.0, 0.0, 0.0);
     else
       hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 512.0, 0.0, 0.25);
   } else {
