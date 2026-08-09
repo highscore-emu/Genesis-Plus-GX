@@ -301,6 +301,12 @@ int cdd_context_load(uint8 *state, char *version)
   cdd.status = tmp8 & 0xf;
   cdd.pending = tmp8 >> 4;
 
+  /* reject invalid current track index */
+  if (index > cdd.toc.last)
+  {
+    return 0;
+  }
+
   /* update current sector */
   cdd.lba = lba;
 
