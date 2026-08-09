@@ -803,8 +803,6 @@ genesis_plus_gx_core_run_frame (HsCore *core)
 
   gboolean is_odd_frame = odd_frame;
 
-  bitmap.data = hs_software_context_acquire_framebuffer (self->context);
-
   switch (platform) {
     case HS_PLATFORM_MEGA_DRIVE:
       system_frame_gen (0);
@@ -856,7 +854,10 @@ genesis_plus_gx_core_run_frame (HsCore *core)
       hs_software_context_set_colorburst (self->context, 1.5, 0.0, -1.0 / 6.0);
   }
 
-  bitmap.data = (guchar *) self->frame_buffer;
+  memcpy (hs_software_context_acquire_framebuffer (self->context),
+          bitmap.data,
+          MAX_WIDTH * MAX_HEIGHT * 4);
+
   hs_software_context_release_framebuffer (self->context);
 
   int samples = audio_update (self->audio_buffer);
