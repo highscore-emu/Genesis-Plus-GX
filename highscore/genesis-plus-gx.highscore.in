@@ -7,3 +7,8 @@ Authors=Charles MacDonald;Eke-Eke;
 Website=https://github.com/ekeeke/Genesis-Plus-GX
 LicensePath=LICENSE.txt
 Platforms=GameGear;MasterSystem;MegaDrive;MegaCD;SG1000;
+
+[Firmware:MegaCD]
+europe=required
+japan=required
+north-america=required
