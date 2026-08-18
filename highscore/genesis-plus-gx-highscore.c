@@ -847,11 +847,13 @@ genesis_plus_gx_core_run_frame (HsCore *core)
       hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 640.0, 0.0, 0.0);
     else
       hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 512.0, 0.0, 0.25);
-  } else {
+  } else if (platform == HS_PLATFORM_MASTER_SYSTEM) {
     if (vdp_pal)
       hs_software_context_set_colorburst (self->context, 1.2, 0.0, 0.0);
     else
       hs_software_context_set_colorburst (self->context, 1.5, 0.0, -1.0 / 6.0);
+  } else {
+    hs_software_context_set_colorburst (self->context, vdp_pal ? 1.2 : 1.5, 0.0, 0.0);
   }
 
   memcpy (hs_software_context_acquire_framebuffer (self->context),
