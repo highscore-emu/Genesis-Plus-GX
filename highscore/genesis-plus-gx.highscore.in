@@ -5,6 +5,8 @@ Commit=@commit@
 Module=genesis-plus-gx-highscore.so
 Authors=Charles MacDonald;Eke-Eke;
 Website=https://github.com/ekeeke/Genesis-Plus-GX
+SourceCode=https://github.com/highscore-emu/Genesis-Plus-GX
+Issues=https://github.com/highscore-emu/Genesis-Plus-GX/issues
 LicensePath=LICENSE.txt
 Platforms=GameGear;MasterSystem;MegaDrive;MegaCD;SG1000;
 
