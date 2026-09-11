@@ -295,8 +295,13 @@ osd_input_update (void)
         break;
 
       case DEVICE_LIGHTGUN:
-        input.analog[i][0] = (int16) (core->light_phaser_x * bitmap.viewport.w);
-        input.analog[i][1] = (int16) (core->light_phaser_y * bitmap.viewport.h);
+        int x = bitmap.viewport.x;
+        int y = bitmap.viewport.y;
+        int w = bitmap.viewport.w;
+        int h = bitmap.viewport.h;
+
+        input.analog[i][0] = (int16) (core->light_phaser_x * (w + x * 2) - x);
+        input.analog[i][1] = (int16) (core->light_phaser_y * (h + y * 2) - y);
 
         if (core->light_phaser_fire)
           buttons |= INPUT_A;
