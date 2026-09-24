@@ -302,14 +302,16 @@ static void m68k_poll_sync(unsigned int reg_mask)
 
 static void s68k_sync(void)
 {
+  /* check SUB-CPU is still running */
   if (!s68k.stopped)
   {
-    /* relative SUB-CPU cycle counter */
-    unsigned int cycles = (m68k.cycles * SCYCLES_PER_LINE) / MCYCLES_PER_LINE;
-
-    /* sync SUB-CPU with MAIN-CPU (only if SUB-CPU execution frame is finished, to prevent recursive execution) */
+    /* check SUB-CPU execution frame is finished (to prevent recursive execution) */
     if (!s68k.cycle_end)
     {
+      /* relative SUB-CPU cycle counter */
+      unsigned int cycles = (m68k.cycles * SCYCLES_PER_LINE) / MCYCLES_PER_LINE;
+
+      /* sync SUB-CPU with MAIN-CPU */
       s68k_run(cycles);
     }
   }
@@ -392,6 +394,14 @@ unsigned int ctrl_io_read_byte(unsigned int address)
           s68k_sync();
           m68k_poll_detect(1<<0x0f);
           return scd.regs[0x0f>>1].byte.l;
+        }
+
+        /* SUB-CPU interrupt */
+        if (index == 0x00)
+        {
+          /* sync SUB-CPU with MAIN-CPU (fixes MCD-verificator IRQ Test #12) */
+          s68k_sync();
+          return scd.regs[0x00>>1].byte.h;
         }
 
         /* default registers */
@@ -679,8 +689,8 @@ void ctrl_io_write_byte(unsigned int address, unsigned int data)
               /* level 2 interrupt enabled ? */
               if (scd.regs[0x32>>1].byte.l & 0x04)
               {
-                /* sync SUB-CPU with MAIN-CPU (fixes Earnest Evans, Fhey Area) */
-                s68k_sync();
+                /* sync SUB-CPU with MAIN-CPU (fixes Earnest Evans, Fhey Area) and restart it if idle on register polling (fixes MCD-verificator IRQ Test #8) */
+                m68k_poll_sync(0xfffffff8);
 
                 /* set IFL2 flag */
                 scd.regs[0x00].byte.h |= 0x01;
