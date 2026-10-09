@@ -75,6 +75,8 @@ struct _GenesisPlusGXCore
 
   gboolean fm_audio;
   HsMasterSystemAccessory sms_accessory;
+
+  float colorburst_phase;
 };
 
 static uint8_t bram_format[0x40] =
@@ -739,6 +741,7 @@ genesis_plus_gx_core_reset (HsCore *core, gboolean hard, GError **error)
   if (hard) {
     update_fm_audio (self);
     system_init ();
+    self->colorburst_phase = 0;
 
     if (!finish_init (self, error))
       return FALSE;
@@ -849,17 +852,19 @@ genesis_plus_gx_core_run_frame (HsCore *core)
 
   if (platform == HS_PLATFORM_MEGA_DRIVE || platform == HS_PLATFORM_MEGA_CD) {
     if (vdp_pal)
-      hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 640.0, 0.0, 0.0);
+      hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 640.0, 0.0, self->colorburst_phase);
     else
       hs_software_context_set_colorburst (self->context, bitmap.viewport.w * 3.0 / 512.0, 0.0, 0.5);
-  } else if (platform == HS_PLATFORM_MASTER_SYSTEM) {
-    if (vdp_pal)
-      hs_software_context_set_colorburst (self->context, 1.2, 0.0, 0.0);
-    else
-      hs_software_context_set_colorburst (self->context, 1.5, 0.0, -1.0 / 6.0);
   } else {
-    hs_software_context_set_colorburst (self->context, vdp_pal ? 1.2 : 1.5, 0.0, 0.0);
+    if (vdp_pal)
+      hs_software_context_set_colorburst (self->context, 1.2, 0.0, self->colorburst_phase);
+    else if (platform == HS_PLATFORM_MASTER_SYSTEM)
+      hs_software_context_set_colorburst (self->context, 1.5, 0.0, -1.0 / 6.0);
+    else
+      hs_software_context_set_colorburst (self->context, 1.5, 0.0, 0.0);
   }
+
+  self->colorburst_phase = fmod (self->colorburst_phase + 1.0, 2.0);
 
   memcpy (hs_software_context_acquire_framebuffer (self->context),
           bitmap.data,
@@ -996,6 +1001,8 @@ genesis_plus_gx_core_load_state (HsCore          *core,
     callback (core, &error);
     return;
   }
+
+  self->colorburst_phase = hs_core_get_colorburst_offset (core);
 
   callback (core, NULL);
 }
