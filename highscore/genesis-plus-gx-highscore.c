@@ -864,7 +864,7 @@ genesis_plus_gx_core_run_frame (HsCore *core)
       hs_software_context_set_colorburst (self->context, 1.5, 0.0, 0.0);
   }
 
-  if (mode != HS_INTERLACING_ODD_FIELD)
+  if (mode != HS_INTERLACING_EVEN_FIELD)
     self->colorburst_phase = fmod (self->colorburst_phase + 1.0, 2.0);
 
   memcpy (hs_software_context_acquire_framebuffer (self->context),
