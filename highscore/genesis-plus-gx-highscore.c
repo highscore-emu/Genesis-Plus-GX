@@ -228,11 +228,11 @@ update_gamepad_gg (int player, uint8 device)
     return;
 
   for (int btn = 0; btn < HS_GAME_GEAR_N_BUTTONS; btn++) {
-    if (core->buttons[player] & 1 << btn)
+    if (core->buttons[player >> 2] & 1 << btn)
       buttons |= GG_BUTTON_MAP[btn];
   }
 
-  input.pad[player * 4] = buttons;
+  input.pad[player] = buttons;
 }
 
 static void
@@ -249,11 +249,11 @@ update_gamepad_md (int player, uint8 device)
     if (input.dev[player] == DEVICE_PAD3B && is_6b_button)
       continue;
 
-    if (core->buttons[player] & 1 << btn)
+    if (core->buttons[player >> 2] & 1 << btn)
       buttons |= MD_BUTTON_MAP[btn];
   }
 
-  input.pad[player * 4] = buttons;
+  input.pad[player] = buttons;
 }
 
 static void
@@ -262,14 +262,14 @@ update_gamepad_sms (int player, uint8 device)
   int buttons = 0;
 
   for (int btn = 0; btn < HS_MASTER_SYSTEM_N_BUTTONS; btn++) {
-    if (core->buttons[player] & 1 << btn)
+    if (core->buttons[player >> 2] & 1 << btn)
       buttons |= SMS_BUTTON_MAP[btn];
   }
 
   if (player == 0 && core->pause_pressed)
     buttons |= INPUT_START;
 
-  input.pad[player * 4] = buttons;
+  input.pad[player] = buttons;
 }
 
 void
